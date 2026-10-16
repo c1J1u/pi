@@ -278,8 +278,8 @@ describe("fault injection", () => {
 	});
 
 	it("plugin path traversal is contained", () => {
-		const escape = resolvePluginPath(join(fixtures, "official-plugin"), "../../secrets");
-		expect("error" in escape).toBe(true);
+		const result = resolvePluginPath(join(fixtures, "official-plugin"), "../../secrets");
+		expect("error" in result).toBe(true);
 	});
 
 	it("uninstall removes plugin capabilities without orphan files", () => {
