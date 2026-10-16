@@ -102,18 +102,21 @@ function allowedJsonFields(event: HookEventName): Set<string> {
 }
 
 function allowedHookSpecificFields(event: HookEventName): Set<string> {
+	// hookEventName appears in the official hookSpecificOutput examples and identifies the
+	// event; accept it everywhere without semantics.
+	const base = new Set(["hookEventName"]);
 	switch (event) {
 		case "SessionStart":
 		case "UserPromptSubmit":
 		case "SubagentStart":
 		case "PostToolUse":
-			return new Set(["additionalContext"]);
+			return new Set([...base, "additionalContext"]);
 		case "PreToolUse":
-			return new Set(["permissionDecision", "permissionDecisionReason", "updatedInput"]);
+			return new Set([...base, "permissionDecision", "permissionDecisionReason", "updatedInput"]);
 		case "PermissionRequest":
-			return new Set(["decision"]);
+			return new Set([...base, "decision"]);
 		default:
-			return new Set();
+			return base;
 	}
 }
 

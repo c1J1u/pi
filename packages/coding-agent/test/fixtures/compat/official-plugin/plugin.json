@@ -1,0 +1,6 @@
+{
+	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+	"name": "my-first-plugin",
+	"version": "1.0.0",
+	"description": "Reusable greeting workflow"
+}
