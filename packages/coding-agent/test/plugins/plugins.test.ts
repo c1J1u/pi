@@ -101,8 +101,8 @@ describe("plugin manifest", () => {
 		expect(resolvePluginPath(dir, "./skills/hello/SKILL.md")).toMatchObject({
 			path: join(dir, "skills", "hello", "SKILL.md"),
 		});
-		const escape = resolvePluginPath(dir, "../../etc/passwd");
-		expect("error" in escape).toBe(true);
+		const escaping = resolvePluginPath(dir, "../../etc/passwd");
+		expect("error" in escaping).toBe(true);
 		const nonRelative = resolvePluginPath(dir, "skills/hello");
 		expect("error" in nonRelative).toBe(true);
 	});
