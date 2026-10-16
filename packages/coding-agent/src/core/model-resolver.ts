@@ -20,6 +20,7 @@ import type { ModelRuntime } from "./model-runtime.ts";
 export const defaultModelPerProvider: Partial<Record<KnownProvider, string>> = {
 	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
 	"ant-ling": "Ring-2.6-1T",
+	ark: "doubao-seed-2-1-lite-260915",
 	anthropic: "claude-opus-4-8",
 	openai: "gpt-5.5",
 	azure: "gpt-5.4",
