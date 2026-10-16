@@ -10,6 +10,13 @@
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+> **Byte c1J1u fork**: Pi as the runtime base, Ark System One as the decision layer,
+> OpenAI/Codex public formats as the compatibility surface. See
+> [packages/coding-agent/README.md](packages/coding-agent/README.md) and
+> [docs/byte-c1j1u/](docs/byte-c1j1u/) — specification support scope, architecture,
+> plugin/skill/hook development, evaluation reproduction, troubleshooting.
+> Upstream baseline: earendil-works/pi@698a2d2.
+
 # Pi
 
 Pi is a minimal, extensible agent harness that you can make your own.

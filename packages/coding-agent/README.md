@@ -3,93 +3,84 @@
     <img alt="Pi logo" src="https://pi.dev/logo-auto.svg" width="128">
   </a>
 </p>
-<p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
-</p>
 
-> New issues and PRs from new contributors are closed automatically. Maintainers review closed submissions daily. See [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md).
+# Byte c1J1u
 
-# Pi
+**Pi as the runtime base · Ark System One as the decision layer · OpenAI/Codex public formats as the compatibility surface.**
 
-Pi is a minimal, extensible agent harness that you can make your own.
+Byte c1J1u is a fork of [Pi](https://github.com/earendil-works/pi) (upstream baseline
+[`698a2d2`](https://github.com/earendil-works/pi/commit/698a2d23b86a5045dd54554354a5e0cb7e466795)) that adds two intertwined capabilities:
 
-Adapt Pi to your workflows, not the other way around. Customize Pi with [extensions](docs/extensions.md), [skills](docs/skills.md), [prompt templates](docs/prompt-templates.md), and [themes](docs/themes.md). Bundle them as [Pi packages](docs/packages.md) and share via npm or git.
+1. **An agent engineering system** where OpenAI/Codex-public-format plugins, skills, MCP
+   servers, and hooks are discovered, installed, configured, loaded, and used correctly —
+   through Pi's single execution path (interactive TUI, print, JSON, RPC, and SDK all
+   share the same pipeline).
+2. **A decision control layer** powered by Volcengine Ark's System One API
+   (`doubao-seed-2-1-lite-260915`) that improves capability selection, model routing,
+   evidence filtering, subtask delegation, and verification control — always behind
+   deterministic floors, never widening authorization.
 
-Pi ships with powerful defaults but skips features like sub-agents and plan mode. Ask Pi to build what you want, or install a package that does it your way.
+The TUI is byte-for-byte identical to upstream Pi (zero changes under `packages/tui` and
+`src/modes/interactive`); every capability is added through Pi's native extension
+mechanism. All upstream Pi documentation under [docs/](./docs) still applies.
 
-Use Pi [interactively](docs/usage.md), automate it in [print or JSON mode](docs/cli.md), control it over [RPC](docs/rpc.md), or build apps with the [Pi TypeScript SDK](docs/sdk.md). See [OpenClaw](https://github.com/OpenClaw/OpenClaw) for a real-world integration.
-
-## Getting started
-
-Install the command-line interface:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
-
-On Windows:
-
-```shell
-powershell -c "irm https://pi.dev/install.ps1 | iex"
-```
-
-The installer pins all dependencies and updates Pi with `pi update`. Alternatively, install directly with npm, which does not pin transitive dependencies:
+## Quick start
 
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-```
-
-Pi requires Node.js 22.19 or newer. The macOS, Linux, and Windows installers can install it if needed. Pi does not require dependency lifecycle scripts for a normal npm installation.
-
-On macOS and Linux, Nix users can install the latest release with `nix profile add github:earendil-works/pi/stable`. See the [quickstart](docs/quickstart.md#1-install-pi) for updating and pinning releases.
-
-Start Pi in the directory where you want it to work:
-
-```bash
-cd /path/to/project
-pi
-```
-
-For a built-in AI provider, run `/login` inside Pi to connect a subscription or API key. Then give Pi a task.
-
-See the [documentation](docs/index.md) for full setup and usage instructions.
-
-## Share your OSS coding agent sessions
-
-If you use Pi for open source work, please share your coding agent sessions.
-
-Public OSS session data helps improve models, prompts, tools, and evaluations using real development workflows.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf) using a Hugging Face account and the Hugging Face CLI.
-
-- [Demo video](https://x.com/badlogicgames/status/2041151967695634619) on how to publish Pi sessions
-- Published Pi development sessions: [`badlogicgames/pi-mono` on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono).
-
-## Development
-
-Clone the repository, install its dependencies, and run Pi from source:
-
-```bash
-git clone https://github.com/earendil-works/pi
-cd pi
 npm install --ignore-scripts
-./pi-test.sh
+npm run build:offline          # or: node packages/ai/scripts/generate-models.ts --data-only
+export ARK_API_KEY=...         # Volcengine Ark key
+
+./pi-test.sh                            # interactive TUI (1:1 upstream Pi)
+./pi-test.sh --model ark/doubao-seed-2-1-lite-260915 -p "hello"   # plain chat
+./pi-test.sh --model byte-c1j1u/auto -p "fix the failing test"    # System One routing
 ```
 
-`pi-test.sh` can be called from any directory and preserves the caller's working directory.
+Inside the TUI: `/plugins` (manage plugins), `/hooks` (trust review), `/byte-c1j1u`
+(subsystem status). System One is inactive without `ARK_API_KEY`; everything else works.
 
-Before submitting changes, run:
+## What was added
+
+| Subsystem | Location | What it does |
+|---|---|---|
+| Ark provider | `src/../ai/src/providers/ark.ts`, `ai/src/api/ark-system-one.ts` | Doubao chat models over OpenAI-compatible completions + the System One classifier transport (beta header, multimodal state, input-only billing) |
+| Plugin system | `src/core/plugins/` | Agent Plugins 1.0.0 manifests with official `extensions.com.openai` replacement semantics, marketplace catalogs (repo/personal/legacy), versioned install cache without hot-swapping enabled plugins, portable `mcp.json` + Codex `.mcp.json` parsing |
+| Skills extension | `src/core/skills-ext/` | agentskills.io frontmatter (license/compatibility/metadata/allowed-tools), `agents/openai.yaml` overlay (`policy.allow_implicit_invocation`, tool dependencies), `.agents/skills` discovery scopes |
+| Hooks runtime | `src/core/hooks/` | All 12 Codex hook events with official matcher semantics, command + mcp_tool handlers, stdin/stdout JSON contract, exit codes, timeouts, async background hooks, per-definition-hash trust |
+| Capability catalog | `src/core/capabilities/` | Unified identity/source/version/scope/state for plugins, skills, MCP servers, tools, hooks; registered ≠ discovered ≠ listed ≠ selected ≠ authorized; content digest for decision cache keys |
+| Decision service | `src/core/systemone/` | One classify call per shared state with merged independent questions; cache keyed on goal+evidence+catalog+questions+model+policy; sanitized audit records; deterministic fallback recording |
+| Model routing | `src/extensions/byte-c1j1u/router.ts` | `byte-c1j1u/auto` virtual model: System One complexity classification on new goals, phase-stable continuations, retry escalation, no routing recursion on direct requests |
+| Decision applications | `src/extensions/byte-c1j1u/decisions.ts` | Evidence filtering (chunked relevance, never loses evidence on failure), verification ledger + stop control (bounded rework, honest settling), skill-selection advice, delegation advice |
+| Subagent scheduler | `src/core/subagents/` | Task graph: ids, dependencies, cycle validation, deterministic file-ownership conflicts, concurrency caps, budget with abort-on-hang, cancellation propagation |
+| Integration | `src/extensions/byte-c1j1u/index.ts` | Builtin extension wiring everything into every Pi interface; event mapping (PreToolUse→tool_call, Stop→agent_before_settle, …); `/plugins`, `/hooks`, `/byte-c1j1u` commands |
+
+## Documentation
+
+- [Specification sources and support scope](../../docs/byte-c1j1u/spec-sources.md) — every
+  implemented field traced to its official spec, with access dates and explicit boundaries
+- [Architecture](../../docs/byte-c1j1u/architecture.md)
+- [Plugin & skill & hook development](../../docs/byte-c1j1u/developing.md)
+- [Evaluation reproduction](../../docs/byte-c1j1u/evaluation.md)
+- [Troubleshooting](../../docs/byte-c1j1u/troubleshooting.md)
+- All upstream [Pi docs](./docs) (extensions, skills, MCP, codemode, SDK, …)
+
+## Compatibility: verified, not claimed
+
+Format and behavioral compatibility is defined by the compatibility test suite
+(`test/compat/`) against fixtures mirroring the specifications' own examples, plus live
+protocol tests (`packages/ai/test/ark-e2e.test.ts`, opt-in). Product-specific services
+(ChatGPT connectors, the universal plugin directory, official marketplace listing,
+sign-in-with-ChatGPT) are out of scope and never claimed — see the support-scope document
+for the exact boundary.
+
+## Tests
 
 ```bash
-npm run check
-./test.sh
+./test.sh                       # full suite (environment notes in evaluation.md)
+node node_modules/vitest/dist/cli.js --run test/compat/compatibility.test.ts   # from packages/coding-agent
+ARK_API_KEY=... ARK_E2E=1 node node_modules/vitest/dist/cli.js --run test/ark-e2e.test.ts  # live, from packages/ai
 ```
-
-Read [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md) before opening an issue or pull request. It defines the contribution gate, issue quality bar, and required checks. Read [AGENTS.md](https://github.com/earendil-works/pi/blob/main/AGENTS.md) for repository-specific implementation, testing, dependency, and release rules.
 
 ## License
 
-MIT
+MIT, as upstream Pi. This fork adds no additional restrictions.
