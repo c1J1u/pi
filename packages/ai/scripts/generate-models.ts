@@ -2750,6 +2750,65 @@ const OPENAI_CLASSIFIER_MODELS: ClassifierModel<"openai-decisions">[] = [
 	},
 ];
 
+
+// Volcengine Ark System One: Doubao Seed 2.1 Lite served behind the decisions endpoint with the
+// ark-beta-systemone-api beta header. Chat entries for the same endpoint family live here too
+// because Ark has no public models.dev catalog. Pricing per the internal One Pager: input-only
+// billing at 0.8 CNY/M input tokens for the System One route.
+const ARK_CHAT_MODELS: Model<"openai-completions">[] = [
+	{
+		id: "doubao-seed-2-1-lite-260915",
+		name: "Doubao Seed 2.1 Lite",
+		api: "openai-completions",
+		provider: "ark",
+		baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0.8, output: 2, cacheRead: 0.2, cacheWrite: 1 },
+		contextWindow: 128000,
+		maxTokens: 32000,
+	},
+	{
+		id: "doubao-seed-2-1-pro-260915",
+		name: "Doubao Seed 2.1 Pro",
+		api: "openai-completions",
+		provider: "ark",
+		baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0.8, output: 2, cacheRead: 0.2, cacheWrite: 1 },
+		contextWindow: 256000,
+		maxTokens: 32000,
+	},
+	{
+		id: "doubao-seed-2-1-turbo-260628",
+		name: "Doubao Seed 2.1 Turbo",
+		api: "openai-completions",
+		provider: "ark",
+		baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+		reasoning: false,
+		input: ["text", "image"],
+		cost: { input: 0.8, output: 2, cacheRead: 0.2, cacheWrite: 1 },
+		contextWindow: 256000,
+		maxTokens: 32000,
+	},
+];
+
+const ARK_CLASSIFIER_MODELS: ClassifierModel<"ark-system-one">[] = [
+	{
+		type: "classifier",
+		id: "doubao-seed-2-1-lite-260915",
+		name: "Doubao Seed 2.1 Lite (System One)",
+		api: "ark-system-one",
+		provider: "ark",
+		baseUrl: "https://ark.cn-beijing.volces.com/api/v1",
+		input: ["text", "image"],
+		cost: { input: 0.8, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		headers: { "ark-beta-systemone-api": "true" },
+	},
+];
+
 async function generateModels() {
 	// Fetch models from all upstream catalogs.
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras, and others
@@ -2763,7 +2822,8 @@ async function generateModels() {
 	const radiusModels = await fetchRadiusModels();
 
 	// Combine chat models (models.dev has priority where sources overlap).
-	const allModels = [...modelsDevModels, ...openRouterCatalog.chat, ...aiGatewayCatalog.chat, ...radiusModels].filter(
+	const arkModels = ARK_CHAT_MODELS;
+	const allModels = [...modelsDevModels, ...openRouterCatalog.chat, ...aiGatewayCatalog.chat, ...radiusModels, ...arkModels].filter(
 		(model) =>
 			!(model.provider === "xai" && XAI_BUILTIN_EXCLUDED_MODEL_IDS.has(model.id)) &&
 			!((model.provider === "opencode" || model.provider === "opencode-go") && model.id === "gpt-5.3-codex-spark"),
@@ -3432,6 +3492,7 @@ async function generateModels() {
 		...OPENCODE_CLASSIFIER_MODELS,
 		...CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS,
 		...OPENAI_CLASSIFIER_MODELS,
+		...ARK_CLASSIFIER_MODELS,
 	];
 	for (const model of classifierModels) {
 		providers[model.provider] ??= { chat: {}, image: {}, classifier: {} };

@@ -78,6 +78,7 @@ export type ImageApi = KnownImageApi | (string & {});
 
 export type KnownClassifierApi =
 	| "typesafe-system-one"
+	| "ark-system-one"
 	| "cloudflare-workers-ai-system-one"
 	| "llama-cpp-classify"
 	| "openai-decisions";
@@ -87,6 +88,7 @@ export type ClassifierApi = KnownClassifierApi | (string & {});
 export type KnownProvider =
 	| "amazon-bedrock"
 	| "ant-ling"
+	| "ark"
 	| "anthropic"
 	| "google"
 	| "google-vertex"

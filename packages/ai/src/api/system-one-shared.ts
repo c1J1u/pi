@@ -12,6 +12,8 @@ import { isRecord, parseClassifierUsage, postClassifierRequest, requiredNumber }
 /** TypeSafe System One request body without the transport-specific envelope. */
 export interface SystemOneWireRequest {
 	state: ClassifierContext["state"];
+	/** Images judged with `state`; only multimodal transports fold them into the payload. */
+	images?: ClassifierContext["images"];
 	questions: Record<string, unknown>;
 }
 
@@ -21,6 +23,8 @@ export interface SystemOneTransport {
 	api: ClassifierApi;
 	/** Service name used in error messages. */
 	label: string;
+	/** Whether the service accepts images folded into a multimodal state. */
+	supportsImages?: boolean;
 	/** Absolute request URL. */
 	url(model: ClassifierModel<ClassifierApi>): URL;
 	/** Wraps the System One request in the service's request envelope. */
@@ -86,6 +90,7 @@ function parseAnswers(label: string, value: unknown, context: ClassifierContext)
 function wireRequest(context: ClassifierContext): SystemOneWireRequest {
 	return {
 		state: context.state,
+		...(context.images?.length ? { images: context.images } : {}),
 		questions: Object.fromEntries(
 			Object.entries(context.questions).map(([id, question]) => [
 				id,
@@ -113,7 +118,9 @@ export async function classifySystemOne(
 
 	try {
 		if (model.api !== transport.api) throw new Error(`Unsupported classifier API: ${model.api}`);
-		if (context.images?.length) throw new Error(`${transport.label} does not support image input`);
+		if (context.images?.length && !transport.supportsImages) {
+			throw new Error(`${transport.label} does not support image input`);
+		}
 		const body = await postClassifierRequest(
 			transport.label,
 			transport.url(model),
