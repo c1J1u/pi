@@ -34,6 +34,7 @@ import {
 } from "../../core/plugins/index.ts";
 import { discoverOpenAiSkills } from "../../core/skills-ext/index.ts";
 import { DecisionService } from "../../core/systemone/decision-service.ts";
+import { stopControl, VerificationLedger } from "./decisions.ts";
 import { createByteC1J1uRouter } from "./router.ts";
 
 export interface ByteC1J1uOptions {
@@ -64,7 +65,10 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 		createByteC1J1uRouter(pi);
 
 		const catalog = new CapabilityCatalog();
+		const pluginRootsByHash = new Map<string, string>();
 		let hookRunner: HookRunner | undefined;
+		let hookTrust: HookTrustStore | undefined;
+		const ledger = new VerificationLedger();
 		let decisionService: DecisionService | undefined;
 		let currentSessionId = "";
 		let currentTranscript: string | null = null;
@@ -75,6 +79,7 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 			const diagnostics: HookDiagnostic[] = [];
 			const events: ParsedHooksConfig["events"] = {};
 			const handlers: ParsedHooksConfig["handlers"] = [];
+			pluginRootsByHash.clear();
 
 			const mergeConfig = (value: unknown, source: string, fromPlugin: boolean, rootDir?: string): void => {
 				const parsed = parseHooksConfig(value, source, { fromPlugin });
@@ -94,7 +99,6 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 				}
 			};
 
-			const pluginRootsByHash = new Map<string, string>();
 			const agentDir = getAgentDir();
 			const fileCandidates: Array<{ path: string; source: string; fromPlugin: boolean; rootDir?: string }> = [
 				{ path: join(agentDir, "hooks.json"), source: "user hooks.json", fromPlugin: false },
@@ -153,10 +157,23 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 				stateFile: locations.trustFile,
 				...(options.bypassHookTrust ? { bypass: true } : {}),
 			});
+			hookTrust = trustStore;
 			const runnerOptions: HookRunnerOptions = {
 				config: { events, handlers, diagnostics },
 				trustStore,
 				outputDir: join(agentDir, "hook_outputs"),
+				getEnv: (hash) => {
+					// Plugin hook commands receive PLUGIN_ROOT/PLUGIN_DATA (and the
+					// CLAUDE_* compat aliases) pointing at their installed plugin root.
+					const rootDir = hash ? pluginRootsByHash.get(hash) : undefined;
+					if (!rootDir) return {};
+					return {
+						PLUGIN_ROOT: rootDir,
+						PLUGIN_DATA: join(rootDir, ".data"),
+						CLAUDE_PLUGIN_ROOT: rootDir,
+						CLAUDE_PLUGIN_DATA: join(rootDir, ".data"),
+					};
+				},
 			};
 			return new HookRunner(runnerOptions);
 		}
@@ -290,17 +307,46 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 		});
 
 		pi.on("agent_before_settle", async (event, ctx) => {
-			// Stop hooks run at the settle boundary only, not on every turn_end. A Stop
-			// `decision: block` continues the run with the reason as a new prompt.
+			// Stop control: deterministic ledger rules first, then the Stop hook contract.
+			// A continue decision queues the reason as a follow-up so the next model
+			// request receives it (the official Stop semantics: reason as new prompt).
+			const goal = lastUserGoal(ctx);
+			const stop = await stopControl({
+				ledger,
+				decisionService,
+				goal,
+				lastAssistantText: lastAssistantText(ctx),
+			});
+			if (stop.action === "continue" && stop.reason) {
+				// The official Stop semantics: continue with the reason as a new prompt.
+				pi.sendUserMessage(stop.reason, { deliverAs: "followUp" });
+				return { continue: true };
+			}
+
 			const result = await emitHooks("Stop", ctx, {
 				stop_hook_active: false,
 				last_assistant_message: lastAssistantText(ctx),
 			});
 			if (result?.blockReason) {
+				pi.sendUserMessage(result.blockReason, { deliverAs: "followUp" });
 				return { continue: true };
 			}
 			return undefined;
 		});
+
+		function lastUserGoal(ctx: ExtensionContext): string {
+			for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
+				if (entry.type !== "message" || entry.message.role !== "user") continue;
+				const content = entry.message.content;
+				if (typeof content === "string") return content.slice(0, 2000);
+				return content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("\n")
+					.slice(0, 2000);
+			}
+			return "";
+		}
 
 		function lastAssistantText(ctx: ExtensionContext): string | null {
 			for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
@@ -413,37 +459,42 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 		});
 
 		pi.registerCommand("hooks", {
-			description: "List configured hooks and their trust state",
-			handler: async (_args, ctx) => {
-				if (!hookRunner) {
+			description: "List hooks; trust or untrust hook definitions (/hooks trust <n>)",
+			handler: async (args, ctx) => {
+				if (!hookRunner || !hookTrust) {
 					ctx.ui.notify("Hooks are not loaded in this session.", "info");
 					return;
 				}
-				const lines: string[] = [];
-				for (const [event, groups] of hookRunnerConfigEvents(hookRunner)) {
-					for (const group of groups) {
-						for (const handler of group.handlers) {
-							const label =
-								handler.handler.type === "command"
-									? handler.handler.command
-									: handler.handler.type === "mcp_tool"
-										? `${handler.handler.server}/${handler.handler.tool}`
-										: handler.handler.type;
-							lines.push(`${event} ${handler.trusted ? "[trusted]" : "[review]"} ${label}`);
-						}
+				const trust = hookTrust;
+				const [action, indexArg] = args.trim().split(/\s+/);
+				const entries = hookRunnerEntries(hookRunner);
+				if (action === "trust" || action === "untrust") {
+					const index = Number.parseInt(indexArg ?? "", 10);
+					const entry = entries[index];
+					if (entry === undefined || Number.isNaN(index)) {
+						ctx.ui.notify(`Usage: /hooks ${action} <n> (see /hooks for numbers)`, "info");
+						return;
 					}
+					if (action === "trust") trust.trust(entry.hash);
+					else trust.untrust(entry.hash);
+					ctx.ui.notify(`${action === "trust" ? "Trusted" : "Untrusted"} #${index}: ${entry.label}`, "info");
+					return;
 				}
-				ctx.ui.notify(lines.length ? lines.join("\n") : "No hooks configured.", "info");
+				const lines = entries.map((entry, index) => {
+					const trusted = trust.isTrusted(entry.hash);
+					return `${index} ${trusted ? "[trusted]" : "[review]"} ${entry.event} ${entry.label}`;
+				});
+				ctx.ui.notify(
+					lines.length ? `${lines.join("\n")}\nTrust with: /hooks trust <n>` : "No hooks configured.",
+					"info",
+				);
 			},
 		});
 
 		pi.registerCommand("byte-c1j1u", {
 			description: "Show byte-c1j1u status: catalog, decision service, plugins, hooks",
 			handler: async (_args, ctx) => {
-				const hookCount = hookRunnerConfigEvents(hookRunner).reduce(
-					(sum, [, groups]) => sum + groups.reduce((n, g) => n + g.handlers.length, 0),
-					0,
-				);
+				const hookCount = hookRunnerEntries(hookRunner).length;
 				const lines = [
 					`capabilities: ${catalog.list().length} records (version ${catalog.currentVersion})`,
 					`skills (implicit-allowed): ${catalog.implicitlyInvocableSkills().length}`,
@@ -457,48 +508,31 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 	};
 }
 
-/** Expose the parsed config's events for status listing (read-only view). */
-function hookRunnerConfigEvents(runner: HookRunner | undefined): Array<
-	[
-		string,
-		Array<{
-			handlers: Array<{
-				handler: { type: string; command?: string; server?: string; tool?: string };
-				trusted: boolean;
-			}>;
-		}>,
-	]
-> {
+/** Read-only view of the runner's parsed hook handlers with their definition hashes. */
+function hookRunnerEntries(runner: HookRunner | undefined): Array<{ event: string; hash: string; label: string }> {
 	const events = (runner as unknown as { config?: { events?: Record<string, unknown> } } | undefined)?.config?.events;
 	if (!events) return [];
-	const result: Array<
-		[
-			string,
-			Array<{
-				handlers: Array<{
-					handler: { type: string; command?: string; server?: string; tool?: string };
-					trusted: boolean;
-				}>;
-			}>,
-		]
-	> = [];
+	const entries: Array<{ event: string; hash: string; label: string }> = [];
 	for (const [event, groups] of Object.entries(events)) {
 		if (!Array.isArray(groups)) continue;
-		const mapped = groups.map((group) => {
-			const g = group as { handlers?: unknown[] };
-			return {
-				handlers: (g.handlers ?? []).map((h) => {
-					const handler = h as {
-						handler: { type: string; command?: string; server?: string; tool?: string };
-						trusted?: boolean;
-					};
-					return { handler: handler.handler, trusted: handler.trusted === true };
-				}),
-			};
-		});
-		result.push([event, mapped]);
+		for (const group of groups) {
+			const handlers = (group as { handlers?: unknown[] }).handlers ?? [];
+			for (const h of handlers) {
+				const parsed = h as {
+					handler: { type: string; command?: string; server?: string; tool?: string };
+					hash: string;
+				};
+				const label =
+					parsed.handler.type === "command"
+						? (parsed.handler.command ?? "")
+						: parsed.handler.type === "mcp_tool"
+							? `${parsed.handler.server}/${parsed.handler.tool}`
+							: parsed.handler.type;
+				entries.push({ event, hash: parsed.hash, label });
+			}
+		}
 	}
-	return result;
+	return entries;
 }
 
 export default createByteC1J1uExtension();

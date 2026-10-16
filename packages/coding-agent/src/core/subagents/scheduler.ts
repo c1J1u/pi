@@ -242,27 +242,44 @@ export class SubagentScheduler {
 		run.state = "running";
 		this.options.onEvent?.({ type: "subagent_start", id: run.spec.id, role: run.spec.role });
 		const startedAt = Date.now();
+		// Per-task timeout aborts only this task: a child controller chains the graph
+		// signal, and the timer aborts the child — sibling tasks are unaffected.
+		const taskController = new AbortController();
+		const graphAbort = () => taskController.abort();
+		this.controller.signal.addEventListener("abort", graphAbort, { once: true });
+		let timedOut = false;
 		const timeoutMs = run.spec.timeoutMs ?? Math.max(0, this.deadline - startedAt);
-		const timer = setTimeout(() => this.controller.abort(), timeoutMs);
+		const timer = setTimeout(() => {
+			timedOut = true;
+			taskController.abort();
+		}, timeoutMs);
 		try {
 			const outcome = await this.options.executor(run.spec, {
-				signal: this.controller.signal,
+				signal: taskController.signal,
 				parentSessionId: "",
 			});
 			const durationMs = Date.now() - startedAt;
-			if (outcome.error) {
+			if (timedOut) {
+				this.finish(run, "timeout", { error: `task timed out after ${timeoutMs}ms`, durationMs, startedAt });
+			} else if (outcome.error) {
 				this.finish(run, "failed", { error: outcome.error, durationMs, startedAt });
 			} else {
 				this.finish(run, "done", { output: outcome.output, durationMs, startedAt });
 			}
 		} catch (error) {
-			this.finish(run, "failed", {
-				error: error instanceof Error ? error.message : String(error),
-				durationMs: Date.now() - startedAt,
-				startedAt,
-			});
+			const durationMs = Date.now() - startedAt;
+			if (timedOut) {
+				this.finish(run, "timeout", { error: `task timed out after ${timeoutMs}ms`, durationMs, startedAt });
+			} else {
+				this.finish(run, "failed", {
+					error: error instanceof Error ? error.message : String(error),
+					durationMs,
+					startedAt,
+				});
+			}
 		} finally {
 			clearTimeout(timer);
+			this.controller.signal.removeEventListener("abort", graphAbort);
 		}
 	}
 

@@ -272,8 +272,12 @@ export interface HookEmitOptions {
 	signal?: AbortSignal;
 	/** MCP tool caller for `mcp_tool` handlers. */
 	callMcpTool?: CallMcpToolFn;
-	/** Extra environment for handler processes (merged over process.env). */
-	getEnv?: () => Record<string, string | undefined>;
+	/**
+	 * Extra environment for handler processes (merged over process.env). Receives the
+	 * executing handler's definition hash so plugin-sourced handlers can resolve their
+	 * PLUGIN_ROOT/PLUGIN_DATA.
+	 */
+	getEnv?: (handlerHash?: string) => Record<string, string | undefined>;
 	/** Spill directory override. Defaults to `<tmpdir>/hook_outputs`. */
 	outputDir?: string;
 }

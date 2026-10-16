@@ -1234,3 +1234,36 @@ describe("misc", () => {
 		expect(parsed?.handlers).toEqual([]);
 	});
 });
+
+describe("plugin env injection (review fix C2)", () => {
+	it("getEnv receives the executing handler's hash", async () => {
+		const seenHashes: Array<string | undefined> = [];
+		const config = {
+			hooks: {
+				SessionStart: [
+					{ hooks: [{ type: "command", command: "node -e process.exit(0)" }] },
+					{ hooks: [{ type: "command", command: "node -e process.exit(0)" }] },
+				],
+			},
+		};
+		const parsed = parseHooksConfig(config, "env-test.json", { fromPlugin: true });
+		const trustStore = new HookTrustStore({ stateFile: join(tmpdir(), `pi-trust-env-${Date.now()}.json`) });
+		for (const handler of parsed.handlers) trustStore.trust(handler.hash);
+		const runner = new HookRunner({
+			config: parsed,
+			trustStore,
+			getEnv: (hash) => {
+				seenHashes.push(hash);
+				return hash === parsed.handlers[0]?.hash ? { PLUGIN_ROOT: "/plugin/a" } : {};
+			},
+		});
+		await runner.emit(
+			"SessionStart",
+			{ session_id: "s", cwd: tmpdir(), hook_event_name: "SessionStart", source: "startup" },
+			{ cwd: tmpdir(), session_id: "s" },
+		);
+		expect(seenHashes).toHaveLength(2);
+		expect(seenHashes[0]).toBe(parsed.handlers[0]?.hash);
+		expect(seenHashes[1]).toBe(parsed.handlers[1]?.hash);
+	});
+});

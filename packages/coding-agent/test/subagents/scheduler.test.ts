@@ -143,3 +143,27 @@ describe("SubagentScheduler", () => {
 		expect(scheduler.add(spec("x")).ok).toBe(false);
 	});
 });
+
+describe("per-task timeout isolation (review fix M1)", () => {
+	it("a per-task timeout aborts only that task, not concurrent siblings", async () => {
+		const scheduler = new SubagentScheduler({
+			executor: (task, { signal }) =>
+				new Promise((resolve) => {
+					const timer = setTimeout(() => resolve({ output: task.id }), 3000);
+					signal.addEventListener("abort", () => {
+						clearTimeout(timer);
+						resolve({ error: `aborted: ${task.id}` });
+					});
+				}),
+			maxConcurrency: 2,
+		});
+		scheduler.add(spec("slow-neighbor"));
+		scheduler.add(spec("times-out", { timeoutMs: 40 }));
+		const results = await scheduler.run();
+		const timedOut = results.find((r) => r.id === "times-out");
+		const neighbor = results.find((r) => r.id === "slow-neighbor");
+		expect(timedOut?.state).toBe("timeout");
+		// The sibling runs to completion: its own controller was never aborted.
+		expect(neighbor?.state).toBe("done");
+	}, 10_000);
+});

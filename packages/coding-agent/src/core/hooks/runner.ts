@@ -203,6 +203,11 @@ export interface HookRunnerOptions {
 	outputDir?: string;
 	/** Diagnostics sink for events like skipped untrusted hooks (in addition to emit results). */
 	onDiagnostic?: (diagnostic: HookDiagnostic) => void;
+	/**
+	 * Extra environment for handler processes, keyed by handler definition hash
+	 * (plugin handlers resolve PLUGIN_ROOT/PLUGIN_DATA through it).
+	 */
+	getEnv?: (handlerHash?: string) => Record<string, string | undefined>;
 }
 
 interface ExecOutcome {
@@ -218,6 +223,7 @@ export class HookRunner {
 	private readonly trustStore: HookTrustStore;
 	private readonly outputDir: string;
 	private readonly onDiagnostic: ((diagnostic: HookDiagnostic) => void) | undefined;
+	private readonly getEnv: ((handlerHash?: string) => Record<string, string | undefined>) | undefined;
 	private asyncSlots = MAX_ASYNC_CONCURRENCY;
 	private readonly asyncQueue: Array<() => void> = [];
 
@@ -226,6 +232,7 @@ export class HookRunner {
 		this.trustStore = options.trustStore;
 		this.outputDir = options.outputDir ?? join(tmpdir(), "hook_outputs");
 		this.onDiagnostic = options.onDiagnostic;
+		this.getEnv = options.getEnv;
 	}
 
 	/**
@@ -354,7 +361,13 @@ export class HookRunner {
 			diagnostics: [],
 		};
 		try {
-			const outcome = await this.spawnHook(command, input, options, effectiveTimeoutMs(event, handler.timeout));
+			const outcome = await this.spawnHook(
+				command,
+				input,
+				options,
+				effectiveTimeoutMs(event, handler.timeout),
+				parsed.hash,
+			);
 			return this.interpretCommandOutput(event, parsed, outcome, options);
 		} catch (error) {
 			result.status = "failed";
@@ -369,9 +382,10 @@ export class HookRunner {
 		input: Record<string, unknown>,
 		options: HookEmitOptions,
 		timeoutMs: number,
+		handlerHash?: string,
 	): Promise<ExecOutcome> {
 		return new Promise<ExecOutcome>((resolve) => {
-			const extraEnv = options.getEnv?.() ?? {};
+			const extraEnv = this.getEnv?.(handlerHash) ?? options.getEnv?.(handlerHash) ?? {};
 			const env: Record<string, string> = {};
 			for (const [key, value] of Object.entries(process.env)) {
 				if (value !== undefined) env[key] = value;

@@ -5,8 +5,10 @@
  * - Repo marketplace: `$REPO_ROOT/.agents/plugins/marketplace.json`
  * - Personal marketplace: `~/.agents/plugins/marketplace.json`
  * - Legacy-compatible: `$REPO_ROOT/.claude-plugin/marketplace.json`
- * - Local install cache: `~/.codex/plugins/cache/$MARKETPLACE/$PLUGIN/$VERSION/` (version `local`
- *   for local plugins)
+ * - Codex installs to `~/.codex/plugins/cache/$MARKETPLACE/$PLUGIN/$VERSION/`; Byte c1J1u
+ *   intentionally keeps its cache under the Pi agent dir (`~/.pi/agent/plugins/cache/...`) so a
+ *   user's real Codex installation is never touched (product-boundary decision, see
+ *   docs/byte-c1j1u/spec-sources.md).
  */
 
 import { existsSync, readFileSync } from "node:fs";
