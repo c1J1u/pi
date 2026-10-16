@@ -34,6 +34,7 @@ import {
 } from "../../core/plugins/index.ts";
 import { discoverOpenAiSkills } from "../../core/skills-ext/index.ts";
 import { DecisionService } from "../../core/systemone/decision-service.ts";
+import { createByteC1J1uRouter } from "./router.ts";
 
 export interface ByteC1J1uOptions {
 	/** Disable System One decisions (evaluation baseline). */
@@ -59,6 +60,9 @@ function pluginLocations(): PluginLocations {
 
 export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): ExtensionFactory {
 	return (pi: ExtensionAPI) => {
+		// The System One-driven virtual model: pi --model byte-c1j1u/auto
+		createByteC1J1uRouter(pi);
+
 		const catalog = new CapabilityCatalog();
 		let hookRunner: HookRunner | undefined;
 		let decisionService: DecisionService | undefined;
@@ -454,9 +458,7 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 }
 
 /** Expose the parsed config's events for status listing (read-only view). */
-function hookRunnerConfigEvents(
-	runner: HookRunner | undefined,
-): Array<
+function hookRunnerConfigEvents(runner: HookRunner | undefined): Array<
 	[
 		string,
 		Array<{
