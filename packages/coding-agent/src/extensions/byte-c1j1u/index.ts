@@ -69,6 +69,7 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 		let hookRunner: HookRunner | undefined;
 		let hookTrust: HookTrustStore | undefined;
 		const ledger = new VerificationLedger();
+		let lastCtx: ExtensionContext | undefined;
 		let decisionService: DecisionService | undefined;
 		let currentSessionId = "";
 		let currentTranscript: string | null = null;
@@ -244,6 +245,7 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 		}
 
 		pi.on("session_start", (event, ctx) => {
+			lastCtx = ctx;
 			currentSessionId = ctx.sessionManager.getSessionId();
 			currentTranscript = ctx.sessionManager.getSessionFile() ?? null;
 			currentModel = ctx.model?.id ?? "";
@@ -276,6 +278,49 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 			void emitHooks("SessionEnd", ctx, { reason: "other" });
 		});
 
+		// Compaction boundary: PreCompact can stop the compaction (continue:false),
+		// PostCompact observes the completed summary.
+		pi.on("session_before_compact", async (event, ctx) => {
+			const result = await emitHooks("PreCompact", ctx, {
+				trigger: event.reason === "manual" ? "manual" : "auto",
+			});
+			if (result && result.continue === false) {
+				throw new Error(`PreCompact hook stopped compaction: ${result.reason ?? "no reason"}`);
+			}
+			return undefined;
+		});
+
+		pi.on("session_compact", (event, ctx) => {
+			void emitHooks("PostCompact", ctx, {
+				trigger: event.reason === "manual" ? "manual" : "auto",
+			});
+		});
+
+		// Interrupt: an aborted run settled — record it; hooks cannot prevent it.
+		pi.on("agent_settled", (event, ctx) => {
+			if (event.aborted) {
+				void emitHooks("Interrupt", ctx, {});
+			}
+		});
+
+		// SubagentStart/SubagentStop: subagent schedulers publish lifecycle events on the
+		// shared extension event bus ('byte-c1j1u:subagents'); each one fires the matching
+		// hook event. Matchers filter on agent_type (the task role).
+		pi.events.on("byte-c1j1u:subagents", (event) => {
+			const payload = event as { type: string; id: string; role?: string; state?: string; error?: string };
+			if (payload.type === "subagent_start") {
+				void emitHooks("SubagentStart", lastCtx!, { agent_id: payload.id, agent_type: payload.role ?? "default" });
+			} else if (payload.type === "subagent_stop") {
+				void emitHooks("SubagentStop", lastCtx!, {
+					agent_id: payload.id,
+					agent_type: payload.role ?? "default",
+					agent_transcript_path: null,
+					stop_hook_active: false,
+					last_assistant_message: null,
+				});
+			}
+		});
+
 		pi.on("input", (event, ctx) => {
 			const text = typeof event.text === "string" ? event.text : "";
 			void emitHooks("UserPromptSubmit", ctx, { prompt: text });
@@ -306,7 +351,7 @@ export function createByteC1J1uExtension(options: ByteC1J1uOptions = {}): Extens
 			});
 		});
 
-		pi.on("agent_before_settle", async (event, ctx) => {
+		pi.on("agent_before_settle", async (_event, ctx) => {
 			// Stop control: deterministic ledger rules first, then the Stop hook contract.
 			// A continue decision queues the reason as a follow-up so the next model
 			// request receives it (the official Stop semantics: reason as new prompt).

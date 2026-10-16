@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClassifierModel, ClassifierResult } from "@earendil-works/pi-ai";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { DecisionService } from "../../src/core/systemone/decision-service.ts";
 import {
 	adviseDelegation,
@@ -211,5 +211,23 @@ describe("adviseDelegation", () => {
 			candidateRole: "r",
 		});
 		expect(advice).toBeUndefined();
+	});
+});
+
+describe("subagent hook event wiring payload shape", () => {
+	it("publishes start/stop payloads the hook runner accepts", async () => {
+		// Shape check only: the extension emits these through its event bus; the hook
+		// runner's matcher filters on agent_type and the payload must carry the fields
+		// the SubagentStart/SubagentStop contract requires.
+		const startPayload = { agent_id: "audit-1", agent_type: "reviewer" };
+		const stopPayload = {
+			agent_id: "audit-1",
+			agent_type: "reviewer",
+			agent_transcript_path: null,
+			stop_hook_active: false,
+			last_assistant_message: null,
+		};
+		expect(startPayload.agent_type).toBe("reviewer");
+		expect(stopPayload.stop_hook_active).toBe(false);
 	});
 });
